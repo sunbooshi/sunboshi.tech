@@ -1,0 +1,58 @@
+<html>
+<head>
+	
+	<title>NanoPi M1通过DHT11读取温湿度</title>
+	<meta name="keywords" content="My Blog, Spider Bitch!" />
+
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+    <!--<link rel="stylesheet" href="/css/main.css">-->
+	<link href="/css/main.css?v=2" rel="stylesheet" type="text/css" />
+    <!--<link rel="stylesheet" href="/css/style.css">-->
+    
+
+    <link rel="alternate" type="application/atom+xml" href="/atom.xml" title="Atom feed">
+
+    
+	<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2"/>
+    
+
+</head>
+
+<body>
+
+<h1 id="logo">NanoPi M1通过DHT11读取温湿度</h1>
+<p>DHT11是个比较常见的模块，可以获取温湿度，比DS18B20多了湿度的获取。</p>
+<p>网络上关于DHT11的资料很多，本来觉得这篇写起来会没什么干货，但是在实践的过程中发现，并不是那么回事。</p>
+<p>资料多归多，但是真正讲清楚的少之又少，很多只是贴了代码，但是其中原理并没讲，有的讲了原理，但是有些关键的细节又没写。本来以为一个被用烂的模块很容易就搞定了，但是花了整整一天，最终还是找到Datasheet把所有问题都搞明白了。之前在Arduino上也用过DHT11，复制一下代码就好了，但是，M1上可没现成代码复制，通过这次移植的过程，从会用到懂其中的门道，这一步迈的可不小。</p>
+<p>有两点需要特别强调的，一是时序，二是数据格式，特别是数据格式，在大多数资料中都忽略了。牢记这两点，在移植过程中就会明白很多。另外在数据手册里提到从DHT11读取的温湿度数据总是前一次的测量值，如果两次测量时间较长，请连续读取两次。</p>
+<p>首先关于DHT11是一个单总线的设备，数据读取是通过一根线来实现，所以DHT11模块只有三个引脚＋，－，data。DHT11数据获取需要依赖高精度的延时函数，这一点非常重要，如果延时函数精度不高，那么数据基本上读不正确。来看一下读取温湿度过程的一个完整时序图。</p>
+<p><img src="/images/dht11_01.png" alt=""></p>
+<ol>
+<li>引脚要设置为输出模式，输出低电平，持续时间不能少于18毫秒。</li>
+<li>输出高电平，持续20～40微秒，之后将引脚设置为输入模式等待DHT11的应答信号。</li>
+<li>DHT11输出80微秒左右的低电平信号响应。</li>
+<li>DHT11输出80微秒左右的高电平信号表示数据传输开始。</li>
+</ol>
+<p>上述步骤是准备步骤，接下来就要接收数据了。</p>
+<p>DHT11总共会传输40位数据，每一位数据开始是以低电平开始，大概持续50微秒，高电平表示此为数据，如果高电平持续时间短，表示该位为0，持续时间长表示改为为1，那么多长时间算0，多长时间算1呢？26～28微秒的高电平表示数据0，70微秒左右的高电平表示数据1。</p>
+<p>数据传输过程是先传高位，后传地位，所以在接收到数据后需要移位。完整的40位数据分别是8位湿度整数值＋8位湿度小数值＋8位温度整数值＋8位温度小数值＋8位校验数据，湿度小数值和温度小数值都是0。</p>
+<p>数据示例：<br><img src="/images/dht11_02.png" alt=""></p>
+<p>这样整个传输过程就梳理完了。现在大家就明白了，为什么需要高精度的延时函数。代码一步一步的去写，唯一的难点就是数据0和1的判定，这里也需要依赖高精度的延时函数。</p>
+<p><img src="/images/dht11_03.png" alt=""><br><img src="/images/dht11_04.png" alt=""></p>
+<p>关于delay和delayMircoseconds这两个函数是从wiringPi里抄来的，延时精度很高。移植代码的时候碰到的主要问题就是延时函数的问题，因为Linux系统复杂，不像Arduino这些的实时性强，所以自己写的时候一定要确保延时函数的精度。C代码写好之后，我还移植了一份Go的代码，但是Go的time库sleep的精度比较低，经常读取失败。</p>
+<p>这份c代码命令输出的为json格式，这样在其他语言里可以通过命令行调用的方式来取得温湿度数据。</p>
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>
