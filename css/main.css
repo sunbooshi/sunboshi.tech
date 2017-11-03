@@ -1,11 +1,23 @@
-body {
-  font-family: STFangSong, Helvetica, Arial, Vernada, Tahoma, STXihei, "Microsoft YaHei", "Songti SC", SimSun, Heiti, sans-serif;
-  font-size: 18px;
-  margin: 5% 20% 5% 20%;
-  padding: 2% 5% 5% 5%;
-  width: 50%;
-  line-height: 150%;
-  border: 1px solid LightGrey;
+@media only screen and (min-width: 320px) and (max-width: 1023px) {
+  body {
+    font-family: STFangSong, Helvetica, Arial, Vernada, Tahoma, STXihei, "Microsoft YaHei", "Songti SC", SimSun, Heiti, sans-serif;
+    font-size: 14px;
+    margin: 5% 2% 5% 2%;
+    padding: 2% 2% 2% 2%;
+    line-height: 150%;
+    border: 1px solid LightGrey;
+  }
+}
+@media only screen and (min-width: 1024px) {
+  body {
+    font-family: STFangSong, Helvetica, Arial, Vernada, Tahoma, STXihei, "Microsoft YaHei", "Songti SC", SimSun, Heiti, sans-serif;
+    font-size: 18px;
+    margin: 5% 20% 5% 20%;
+    padding: 2% 5% 5% 5%;
+    width: 50%;
+    line-height: 150%;
+    border: 1px solid LightGrey;
+  }
 }
 H1 {
   font-family: "Palatino Linotype", "Book Antiqua", Palatino, Helvetica, STKaiti, SimSun, serif;
