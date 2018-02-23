@@ -133,6 +133,7 @@ pre,
 pre,
 code {
   font-family: "Input Mono", "PT Mono", Consolas, Monaco, Menlo, monospace;
+  font-size: 0.85em;
 }
 code {
   word-break: break-all;
