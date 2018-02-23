@@ -16,6 +16,7 @@
 }
  pre, code {
   font-family: "Source Code Pro", Consolas, Monaco, Menlo, Consolas, monospace;
+  font-size: 0.85em;
 }
  code {
   background: #eee;
