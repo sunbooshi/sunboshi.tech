@@ -1,0 +1,109 @@
+<html>
+<head>
+	
+	<title>AndroidThings驱动Nokia5110</title>
+	<meta name="keywords" content="My Blog, Spider Bitch!" />
+
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+    <!--<link rel="stylesheet" href="/css/main.css">-->
+	<link href="/css/main.css?v=2" rel="stylesheet" type="text/css" />
+    <!--<link rel="stylesheet" href="/css/style.css">-->
+    
+
+    <link rel="alternate" type="application/atom+xml" href="/atom.xml" title="Atom feed">
+
+    
+	<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2"/>
+    
+
+</head>
+
+<body>
+
+<h1 id="logo">AndroidThings驱动Nokia5110</h1>
+<p>有了Max7219点阵的驱动经验之后，再来学习Nokia5110的驱动就得心应手了，两者同样都是串行驱动，不同的是Max7219每一组16位的数据相当于一条指令，而Nokia5110数据和指令是分开的，通过DC引脚来区分。Max7219是8x8的点阵Nokia5110是48x84，可以粗暴的理解为多个Max7219点阵的组合，实际上Max7219点阵是支持多个点阵组合的。先来张Datasheet中的图形象的了解一下Nokia5110。<br><img src="/images/nokia5110_01.png" alt=""></p>
+<p>是不是一个个点阵的组合？当然，Nokia5110并不是把n个点阵组合在一起，而是当成一个整体来处理。在Max7219中可以通过DIG和SEG定位到具体某一个点，即通过寄存器地址+寄存器中的数据位。而Nokia5110是通过如下的图来定位某个像素点的：<br><img src="/images/nokia5110_02.png" alt=""></p>
+<p>之前提到5110的像素是48x84，上图中X地址是0～83也就是84个像素，但Y地址却只是0～5，少于48个像素，这是因为我们可以把上图想想成一个二维byte类型数组，行表示的Y地址，列表示X地址，因为是byte类型，每一个元素有8位数据，恰好可以表示8个像素的显示情况。这跟Max7219中的寄存器里的数据异曲同工，只不过5110中，这8位数据从低位到高位分别是表示从上到下（也就是列方向上）的像素显示情况，所以Y地址实际上是8*6，还是48个像素。</p>
+<p>有了这两张图，我们就很容易明白如何驱动5110了，行方向上的像素就是真实的x的位置，而列方向上的像素，首先需要定位到Y地址，然后再转换位Y里的数据位。因为5110里像素比较多，如果我们每写一个像素都要制定一下地址，那就太麻烦了，所以5110提出了寻址方式。所谓寻址就是向5110传输一组显示数据时，5110按照一定的规则依次显示这些数据，这样就没必要为每位数据指定像素位置了，只需要在传输数据之前指定X、Y即可，传输的数据会以该X，Y为起始位置按照寻址方式依次显示每位像素。</p>
+<p>5110的寻址方式有两种水平寻址和垂直寻址，水平寻址是指向从左到右，然后从上到下的顺序，而垂直顺序是先从上到下然后再从左到右。所以，水平寻址可以简单的理解我们现在拿钢笔写字，从左到右，从上到下。而垂直寻址则是古代人拿毛笔写字，从上到下，从左到右。</p>
+<p>好了，到这里应该都明白5110的显示原理了。有了上面的说明，自己再去看一下Datasheet，或者找一下其他的文章就很容易理解了。而具体的代码，现在脑子里应该有一个雏形了。在Max7219中我们简单定义了两个函数就实现了核心功能，而5110也只需要三个函数就可以实现核心功能了。<br>第一个核心函数是向5110传输一个byte。</p>
+<pre><code>private void writeNokia5110Byte(byte data) throws IOException {
+    byte[]out = {data};
+    mDevice.write(out, 1);
+}
+</code></pre><p>第二个核心函数是向5110发送command。</p>
+<pre><code>private void cmdNokia5110(byte cmd) throws IOException {
+    mGpioDC.setValue(false);
+    writeNokia5110Byte(cmd);
+}
+</code></pre><p>第三个核心函数是向5110发送数据。</p>
+<pre><code>private void dataNokia5110(byte data) throws IOException {
+    mGpioDC.setValue(true);
+    writeNokia5110Byte(data);
+}
+</code></pre><p>有了这个三个核心函数之后再驱动5110就很简单了。考虑到5110是通过寻址方式来批量设置像素，还可以再封装一个传输数组的函数</p>
+<pre><code>private void dataNokia5110(byte[] data) throws IOException {
+    mGpioDC.setValue(true);
+    mDevice.write(data, data.length);
+}
+</code></pre><p>然后因为在传输数据之前需要先设置数据起始X、Y，再来定义设置坐标的函数</p>
+<pre><code>private void setNokia5110XY(int x, int y) throws IOException {
+    cmdNokia5110((byte)(0x40 | y));
+    cmdNokia5110((byte)(0x80 | x));
+}
+</code></pre><p>接下来就是屏幕的初始化函数</p>
+<pre><code>private void initNokia5110() throws IOException {
+    mGpioRST.setValue(false);
+    mGpioRST.setValue(true);
+
+    cmdNokia5110((byte)0x21);      // 使用扩展命令设置LCD模式
+    cmdNokia5110((byte)0xa2);      // 设置VOP电压
+    cmdNokia5110((byte)0x04);      // 温度校正
+    cmdNokia5110((byte)0x10);      // 设置液晶偏置电压 1:48
+    cmdNokia5110((byte)0x20);      // 使用基本命令，V=0，水平寻址
+    cmdNokia5110((byte)0x0c);      // 设定显示模式，正常显示
+    clrNokia5110();                          // 清屏
+}
+</code></pre><p>初始化函数非常重要，有几个参数可能是需要调节的，这其中涉及液晶屏的运作原理。VOP电压的参数以及偏置电压的参数可能都需要根据实际情况调节，上面的参数是我在AndroidThings上调整过的，而且如果搜索其他资料会发现这几个参数应该都不一样。具体我也没有彻底明白。<br>VOP的范围大概是0x80～0xFF，加入初始使用0xa2但是屏幕上没显示的话，可以增大参数，比如0xb0，0xc0，如果屏幕上的像素全亮了再慢慢减小，直至清晰显示。如果显示像素有点抖动，就需要调节偏执电压了，其范围是0x10～0x17。需要注意的是VOP不能设置的太高，因为这部分我也没有特别明白，所以建议阅读Datasheet。</p>
+<p>上面的清屏函数并不真正的属于初始化，算是软初始化吧，可以去掉。但是其他选项是不能省的，而且顺序也必须按照上面的顺序依次设置。</p>
+<p>清理屏幕函数如下，其实就是将所有像素清零：</p>
+<pre><code>private void clrNokia5110() throws IOException {
+    setNokia5110XY(0, 0);
+    for (int i = 0; i &lt; 84 * 6; i++) {
+        dataNokia5110((byte)0x0);
+    }
+}
+</code></pre><p>最后找一个已有的ascii字符表，然后封装一个绘制字符的函数</p>
+<pre><code>private void strNokia5110(String txt, int x, int y) throws IOException {
+    setNokia5110XY(x, y);
+    for (int i = 0; i &lt; txt.length(); i++) {
+        char c = txt.charAt(i);
+        int index = (int)c;
+        if (index &gt;= 0x20 &amp;&amp; index &lt;= 0x7f) {
+            index = index - 0x20;
+            byte[] data = ASCII[index];
+            dataNokia5110(data);
+        }
+    }
+}
+</code></pre><p>总结：<br>其实这篇试用是我先写帖子后写代码，觉得心中对原理掌握的非常充分了，对一次成功非常有把握。但是再最终调试代码的时候发现确实对于显示部分没有任何问题，串行数据协议很简单。最终问题出在屏幕初始化的地方，上面已经提及了如何调整参数，网上的其他资料少有提及这部分，手册里是有的，手上没有逻辑分析仪所以不确定是不是传输数据错误还是什么问题，但我对数据部分还是有着一定的自信，觉得是初始化的问题。AndroidThings上调试还是比较麻烦，所以我又找了一份Arduino的现成工程，然后并不成功，AndroidThings屏幕不亮，Arduino是所有像素都亮了，让我更加确定是初始化的问题，逐一排后，最终确认是VOP和偏执电压以及参数初始化顺序的问题。修改相关参数后终于通过AndroidThings点亮了5110。</p>
+<p>所以非电子专业的电子爱好者，倒腾这些还是吃力的。之前驱动Max7219一次性成功后给我极大的自信，然而对于5110这次又是深有感触。不要迷信网上的资料，只有自己实践过才明白其中原理。Datasheet要通读，因为最终还是要回到Datasheet上，不过这次还是忽略了最基础的东西，即使不忽略自己也无法理解其中道理。关于VOP和偏置电压，自己并不清楚，大概猜测是涉及液晶屏幕的运作原理，这又是另外的知识了。总之，这次能够成功驱动5110，运气的成份很大，也认识到了自己的不足，总的来说收获颇大。想想来云汉这么久着着实实的掌握了不少模块。试用的好处就是这样的，免费拿了板子就要出干货，群里几千人盯着你呢，所以不得不花精力去知其所以然，而这次5110的驱动碍于自己的知识储备还是落得个一知半解。当然，毕竟是业余选手嘛，可以理解的。</p>
+<p>再啰嗦两句，Max7219也好，Nokia5110也好，我自己是明白了，但是不确定自己写的帖子是不是能让别人读明白。如果读了之后还是不太清晰的话，我建议在纸上画一下，把协议、数据以及像素对应起来，先有大致的概念，然后再逐一的深入细节，这样比较容易掌握。如果理解了Max7219，对掌握Nokia5110很有帮助。掌握了这两个之后，我想其他的屏幕也很容易掌握了。</p>
+<p>完整代码下载链接: <a href="https://pan.baidu.com/s/1jJ0Xj9O" target="_blank" rel="external">https://pan.baidu.com/s/1jJ0Xj9O</a> 密码: kunk</p>
+
+
+<span style="color:#959595;float:right;">2018-02-23</span>
+
+
+
+
+
+
+
+
+
+</body>
+</html>
