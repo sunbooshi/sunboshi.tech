@@ -1,0 +1,53 @@
+<html>
+<head>
+	
+	<title>批量化的项目代码分析脚本及配置工具</title>
+	<meta name="keywords" content="My Blog, Spider Bitch!" />
+
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+    <!--<link rel="stylesheet" href="/css/main.css">-->
+	<link href="/css/main.css?v=2" rel="stylesheet" type="text/css" />
+    <!--<link rel="stylesheet" href="/css/style.css">-->
+    
+
+    <link rel="alternate" type="application/atom+xml" href="/atom.xml" title="Atom feed">
+
+    
+	<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2"/>
+    
+
+</head>
+
+<body>
+
+<h1 id="logo">批量化的项目代码分析脚本及配置工具</h1>
+<p>在上一篇<a href="https://www.jianshu.com/p/bfb266de23f1" target="_blank" rel="external">《使用Jenkins+OCLint+SonarCube对iOS项目进行代码分析》</a>提到了如果需要批量的将项目接入代码分析也是个体力活，而且还容易出错。另外，上一篇主要目的是将各个环节串联起来，也没有介绍OCLint的相关配置。</p>
+<p>在上一篇中我们之间通过命令行向OCLint传递参数，除此之外OCLint还支持使用<a href="http://docs.oclint.org/en/stable/howto/rcfile.html" target="_blank" rel="external">配置文件</a>。具体做法就是在当前目录下<code>.oclint</code>文件，将配置项写入该文件。一个简单的配置文件内容如下：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div></pre></td><td class="code"><pre><div class="line">rule-configurations:</div><div class="line">  - key: LONG_LINE</div><div class="line">    value: 1000</div><div class="line">  - key: LONG_METHOD</div><div class="line">    value: 200</div><div class="line">  - key: CYCLOMATIC_COMPLEXITY</div><div class="line">    value: 10</div><div class="line"></div><div class="line">disable-rules:</div><div class="line">  - UnusedMethodParameter</div><div class="line">  - AssignIvarOutsideAccessors</div><div class="line">  - ShortVariableName</div><div class="line"></div><div class="line">report-type: pmd</div><div class="line">output: oclint.xml</div><div class="line">max-priority-1: 10000</div><div class="line">max-priority-2: 10000</div><div class="line">max-priority-3: 10000</div></pre></td></tr></table></figure>
+<p>上面<code>.oclint</code>示例中主要是规则参数的调整以及规则禁用，比如我们把函数最大长度改为了200，默认值是100。另外与OC比较密切相关还有一个LONG_VARIABLE_NAME，变量名最大长度，按照OC冗长的命名规则来说，默认值20小点了，改为40可能比较合适，当然这个还是具体的根据自己公司的代码规范执行。</p>
+<p>除了<code>.oclint</code>，还有<code>sonar-project.properties</code>文件也需要生成，所以，现在就是收集项目信息，根据实际情况调整OCLint规则，生成<code>.oclint</code>以及<code>sonar-project.properties</code>。</p>
+<p>根据上一篇的内容，有了基本的配置信息，写一个脚本来适配所有项目最合适不过了。脚本需要实现三个主要功能，编译工程生成compile_commands.json，调用oclint生成oclint.xml，使用sonar-scanner生成分析报告。然后就是配置文件生成，因为需要一定交互，用vue.js来实现比较不错（之前还做了Chrome App，但是最新的Chrome已经放弃Chrome App了，比较遗憾，只能本地起服务或者部署到服务器上了）。</p>
+<p>先来一个截图看看：</p>
+<p><img src="/images/sonar-maker.png" alt="sonar-maker"></p>
+<p>通过配置工具可以生成一个json文件，然后将该文件传递给python脚本就可以实现项目代码分析了。这样在上一篇文章中的<code>2.2）</code>其中构建一步的shell脚本只需要输入如下内容即可：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">/Users/drsun/jenkins/jenkins-sonar.py /Users/drsun/jenkins/afnetworking.json</div></pre></td></tr></table></figure>
+<p>是不是清爽了很多？</p>
+<p>本篇提供的工具不算太完善，还需要根据自己的情况去调整。</p>
+<p>项目代码：<a href="https://github.com/sunboshi/sonarmaker" target="_blank" rel="external">https://github.com/sunboshi/sonarmaker</a></p>
+
+
+<span style="color:#959595;float:right;">2018-03-29</span>
+
+
+
+
+
+
+
+
+
+</body>
+</html>
