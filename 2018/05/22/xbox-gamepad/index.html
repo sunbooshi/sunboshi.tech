@@ -1,0 +1,98 @@
+<html>
+<head>
+	
+	<title>在树莓派中使用Xbox手柄</title>
+	<meta name="keywords" content="My Blog, Spider Bitch!" />
+
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+    
+    <!--<link rel="stylesheet" href="/css/main.css">-->
+	<link href="/css/main.css?v=2" rel="stylesheet" type="text/css" />
+    <!--<link rel="stylesheet" href="/css/style.css">-->
+    
+
+    <link rel="alternate" type="application/atom+xml" href="/atom.xml" title="Atom feed">
+
+    
+	<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2"/>
+    
+
+</head>
+
+<body>
+
+<h1 id="logo">在树莓派中使用Xbox手柄</h1>
+<p>很早的时候在树莓派下是用xboxdrv来使用Xbox手柄，当时用的是Python脚本，其原理就是使用Python启动xboxdrv，然后读取xboxdrv的输出来获取各个按键事件。这样做稍微有一些绕，这次打算用nrf24l01做遥控小车，就稍微搜索了一下发现有比较简单的办法。</p>
+<p>树莓派自带xpad内核模块支持Xbox手柄，并不需要xboxdrv。如果使用xboxdrv的时候还需要先卸载xpad。目前我不是特别清楚xboxdrv的优势，猜测是可以自定义按键映射吧。</p>
+<p>当我们将Xbox手柄接入之后会xpad在<code>/dev/input</code>下创建两个文件<code>/dev/input/event0</code>和<code>/dev/input/js0</code>（注意也可能是event1之类的），其中的js0设备是摇杆设备（joystick）这个设备可以获取摇杆数据但是按键数据获取不到，event0设备可以获取所有按键。所以想要获取Xbox手柄的按键数据只要读取event0文件即可。这个event0就是Linux下的标准输入设备，每一次按键事件都会被封装为<code>struct input_event</code>结构，其定义如下：</p>
+<pre><code>struct input_event {
+        struct timeval time;
+        unsigned short type;
+        unsigned short code;
+        unsigned int value;
+};
+</code></pre><p>当我们读取event0时，实际上获取的内容就是一个<code>struct input_event</code>，这里我们主要关注type、code和value即可。（关于type、code的详细定义可以参考<a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/input-event-codes.h" target="_blank" rel="external">这里</a>）。</p>
+<p>在处理数据之前，先了解一下Xbox的各个按键，如下图所示:</p>
+<p><img src="/images/xboxgamepad.png" alt="XboxGamepad"></p>
+<p>再说一下前面提到的js0设备，之所以是会有这个js0设备，是因为摇杆数据和按键数据是有区别的，因为摇杆产生的是一个连续值，比如从0到255，而按键按下时是1，未按下则是0。所以它们的type是不一样的，摇杆的是type是EV_ABS，按键的type是EV_KEY。因此我们在处理input_event的时候首先需要根据type不同来分别进行处理，然后使用code来将数据对应到各个按键上，比如A键，它对应的code是，左摇杆对应的X轴方向（也就是左右方向）code是ABS_X，Y轴的方向（也就是上线方向）code是ABS_Y。其它几个按键请参考之前提到的详细定义。</p>
+<p>除了左右摇杆外，十字键（图中的Directionnal Pad）、Left Trigger、Right Trigger的type都是EV_ABS，而十字键的数据稍微有点特殊，需要特别处理一下。</p>
+<p>还有一个小问题，假如我们希望通过摇杆来控制小车前后左右到处跑，那就需要同时知道X、Y轴的数据，但是在input_event中似乎没法区分，这时候我们需要一个特殊的type——EV_SYN，它的作用就是将同时按下的键或者摇杆数据打包成一个，比如我们在使用键盘是按下Ctrl+C的时候，会收到3个input_event，ctrl键、c键然后一个EV_SYN，code为SYN_REPORT，所以我们需要先把input_event数据缓存一下，等到收到EV_SYN时再统一处理。实际上只按c键也会收到一个EV_SYN。</p>
+<p>好像挺简单的，只要三步</p>
+<pre><code>1.打开/dev/input/event0文件
+2.读取文件内容处理input_event
+3.处理EV_SYN合并按键数据
+</code></pre><p>现在再来写代码就很简单了，思路很清晰。实际上我用了一两个小时就写出来demo，但是在处理EV_SYN耽搁了很久，总想找一个参考，然而根本找不到，于是就耽搁了很久。后来突然想明白了，之前的思路有问题。一开始是总着眼在处理EV_SYN时需要缓存数据，似乎比较麻烦，但是看到之前使用xboxdrv时的数据输出时突然意识到EV_SYN要处理的是不同按键间的数据，所以不需要考虑同一按键的数据缓存，这样就简单了。首先定义一个结构体，存储的是Xbox手柄所有按键的数据，每一次读取event0的时候就更新相应按键的数据，当读到EV_SYN，则对数据进行处理，这个工作就根据具体需要去做了。</p>
+<p>至此，思路已经非常清晰了。我写了一个简单的封装，简单的demo程序如下所示：</p>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;signal.h&gt;
+
+#include &quot;xboxinput.h&quot;
+
+void valHandler(struct XobxInputValue val)
+{
+    printf(&quot;-&gt;X1:%6d Y1:%6d X2:%6d Y2:%6d du:%d dd:%d dl:%d dr:%d A:%d B:%d X:%d Y:%d lt:%6d rt:%6d lb:%d rb:%d back:%d guide:%d start:%d\n&quot;,
+        val.X1, val.Y1, val.X2, val.Y2,
+        val.du, val.dd, val.dl, val.dr,
+        val.A, val.B, val.X, val.Y,
+        val.lt, val.rt, val.lb, val.rb,
+        val.back, val.guide, val.start);
+}
+
+void exitHandler(){
+    // Close dev
+    closeXboxInput();
+    exit(0);
+}
+
+int main()
+{
+    const char devname[] = &quot;/dev/input/event0&quot;;
+
+    signal(SIGINT, exitHandler);
+
+    if (openXboxInput(devname)) {
+        readXboxInput(valHandler);
+    }
+
+    return 0;
+}
+</code></pre><p>看一下main函数，就是打开设备、读取内容，其中的valHandler就是我们具体处理按键的地方。<br>因为readXboxInput不停的读取数据，所以我们处理了SIGINT信号，用户按下Ctrl+c是关闭设备，退出程序。<br>是不是很简单，而且这个程序不需要root权限，xboxdrv是需要root权限的。</p>
+<p>如果想要使用python，其实也很简单，将从event0文件读取的数据使用struct解包，然后再处理即可。我也写了一个python版的demo。这样就能很方便的使用Xbox手柄了。</p>
+<p>项目地址：<a href="https://github.com/sunboshi/xboxinput" target="_blank" rel="external">https://github.com/sunboshi/xboxinput</a></p>
+
+
+<span style="color:#959595;float:right;">2018-05-22</span>
+
+
+
+
+
+
+
+
+
+</body>
+</html>
